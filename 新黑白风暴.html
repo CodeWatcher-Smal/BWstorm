@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>挑战 黑白风暴</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#06B6D4', // 科技蓝主色
+                        secondary: '#22D3EE', // 亮蓝色
+                        accent: '#3B82F6', // 强调蓝
+                        dark: '#0F172A', // 深色背景
+                        light: '#E0F2FE', // 浅色背景
+                    },
+                    fontFamily: {
+                        game: ['"Press Start 2P"', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .pixel-border {
+                box-shadow: 0 0 0 2px #0284C7;
+            }
+            .pixel-transition {
+                transition: all 0.2s ease-in-out;
+            }
+            .pixel-hover {
+                transform: scale(1.05);
+                box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+            }
+            .game-container {
+                perspective: 1000px;
+            }
+            .pixel-cell {
+                transition: transform 0.3s;
+                position: relative;
+            }
+            .pixel-cell.selected {
+                box-shadow: 0 0 15px rgba(6, 182, 212, 0.7);
+                border: 2px solid #06B6D4;
+            }
+            .pixel-cell.dragging {
+                opacity: 0.7;
+                transform: scale(1.1) rotate(5deg);
+                z-index: 100;
+                box-shadow: 0 0 15px rgba(6, 182, 212, 0.7);
+            }
+            .success-animation {
+                animation: pulse 1s infinite alternate;
+            }
+            @keyframes pulse {
+                from { transform: scale(1); }
+                to { transform: scale(1.1); }
+            }
+            .glow {
+                box-shadow: 0 0 15px rgba(6, 182, 212, 0.7);
+            }
+            .move-animation {
+                transition: transform 0.6s cubic-bezier(0.25, 0.1, 0.25, 1);
+                z-index: 20;
+                position: absolute;
+            }
+            .scale-in {
+                animation: scaleIn 0.3s ease-out forwards;
+            }
+            @keyframes scaleIn {
+                from { transform: scale(0); opacity: 0; }
+                to { transform: scale(1); opacity: 1; }
+            }
+            /* ✅ 核心修改1：丝滑同步特效 - 漂移+旋转同时进行、无方块感 */
+            .sync-drift-rotate {
+                animation: syncDriftRotate 0.6s cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+            }
+            @keyframes syncDriftRotate {
+                0% { transform: translate(0, 0) rotate(0deg); }
+                100% { transform: translate(0, 0) rotate(90deg); }
+            }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-sky-500/20 to-cyan-600/30 min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+    <div class="max-w-md w-full mx-auto">
+        <!-- 游戏标题和控制区 -->
+        <div class="text-center mb-6">
+            <h1 class="text-[clamp(1.5rem,5vw,2.5rem)] font-bold text-primary mb-2 tracking-tight text-shadow-lg">黑白风暴</h1>
+            <p class="text-sky-800 mb-4">点击第一个，再点第二个，合体创造纯色方块!</p>
+            
+            <div id="game-stats" class="hidden mb-4 flex justify-center items-center gap-4">
+                <div class="bg-white/80 backdrop-blur-sm rounded-lg px-4 py-2 shadow-md border border-primary/20">
+                    <span class="text-sky-700 text-sm">用时:</span>
+                    <span id="timer" class="font-bold text-dark ml-1">00:00.00</span>
+                </div>
+            </div>
+            
+            <button id="start-btn" class="bg-primary hover:bg-primary/90 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary/50 glow">
+                <i class="fa fa-play mr-2"></i>开始游戏
+            </button>
+        </div>
+        
+        <!-- 胜利提示 (默认隐藏) -->
+        <div id="success-message" class="hidden fixed inset-0 bg-dark/80 backdrop-blur-sm flex items-center justify-center z-50">
+            <div class="bg-white/90 backdrop-blur-md rounded-xl p-8 max-w-md w-full mx-4 text-center shadow-2xl transform transition-all border border-primary/30">
+                <div class="text-5xl mb-4 text-secondary">🎉</div>
+                <h2 class="text-2xl font-bold mb-2 text-dark">恭喜你!</h2>
+                <p class="text-sky-700 mb-4">你成功创造了纯色像素块!</p>
+                <div class="text-xl font-bold mb-6">
+                    用时: <span id="final-time" class="text-primary">00:00.00</span>
+                </div>
+                <button id="restart-btn" class="bg-primary hover:bg-primary/90 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition-all duration-300 transform hover:scale-105 glow">
+                    <i class="fa fa-refresh mr-2"></i>再来一次
+                </button>
+            </div>
+        </div>
+        
+        <!-- 游戏网格容器 -->
+        <div id="game-container" class="game-container grid grid-cols-4 gap-4 bg-white/70 backdrop-blur-sm p-4 rounded-xl shadow-xl border border-primary/20 relative">
+            <!-- 像素块将通过JavaScript动态生成 -->
+        </div>
+        
+        <!-- 游戏规则说明 -->
+        <div class="mt-6 bg-white/80 backdrop-blur-sm p-4 rounded-lg shadow-md border border-primary/20">
+            <h3 class="font-bold text-lg mb-2 text-dark">游戏规则</h3>
+            <ul class="text-sky-700 space-y-1 text-sm">
+                <li>• 点击第一个像素块，再点击第二个像素块进行合体</li>
+                <li>• 合体规则: 同位像素同色则为黑，异色则为白</li>
+                <li>• 合体后，目标位置显示结果，原位置图形原地顺时针旋转90度</li>
+                <li>• 创造出全黑或全白的像素块即可获胜</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // 游戏状态变量
+            const gameState = {
+                isPlaying: false,
+                startTime: null,
+                timerInterval: null,
+                cells: [], // 存储所有像素块数据
+                gridSize: 4, // 4x4网格
+                pixelSize: 4, // 每个像素块是4x4的像素
+                selectedCellIndex: null // 选中的第一个单元格索引
+            };
+            
+            // DOM元素
+            const gameContainer = document.getElementById('game-container');
+            const startBtn = document.getElementById('start-btn');
+            const restartBtn = document.getElementById('restart-btn');
+            const timerDisplay = document.getElementById('timer');
+            const gameStats = document.getElementById('game-stats');
+            const successMessage = document.getElementById('success-message');
+            const finalTimeDisplay = document.getElementById('final-time');
+            
+            // 初始化游戏网格
+            function initializeGrid() {
+                gameContainer.innerHTML = '';
+                gameState.cells = [];
+                gameState.selectedCellIndex = null;
+                
+                for (let row = 0; row < gameState.gridSize; row++) {
+                    for (let col = 0; col < gameState.gridSize; col++) {
+                        const index = row * gameState.gridSize + col;
+                        const pixelData = generateRandomPixelData();
+                        const cellElement = createPixelCell(index, pixelData);
+                        gameContainer.appendChild(cellElement);
+                        gameState.cells.push({
+                            index,
+                            row,
+                            col,
+                            data: pixelData,
+                            element: cellElement
+                        });
+                    }
+                }
+                setupClickSelection();
+            }
+            
+            // 生成随机的4x4像素数据 (0为白，1为黑)
+            function generateRandomPixelData() {
+                const data = [];
+                for (let i = 0; i < gameState.pixelSize; i++) {
+                    const row = [];
+                    for (let j = 0; j < gameState.pixelSize; j++) {
+                        row.push(Math.floor(Math.random() * 2));
+                    }
+                    data.push(row);
+                }
+                return data;
+            }
+            
+            // 将像素数据向右旋转90度
+            function rotatePixelData(data) {
+                const size = data.length;
+                const rotated = [];
+                for (let i = 0; i < size; i++) {
+                    rotated.push(new Array(size).fill(0));
+                }
+                for (let i = 0; i < size; i++) {
+                    for (let j = 0; j < size; j++) {
+                        rotated[i][j] = data[size - j - 1][i];
+                    }
+                }
+                return rotated;
+            }
+            
+            // 创建像素块元素
+            function createPixelCell(index, pixelData) {
+                const cell = document.createElement('div');
+                cell.id = `cell-${index}`;
+                cell.className = 'pixel-cell w-20 h-20 pixel-border rounded-md bg-sky-50 flex flex-wrap cursor-pointer pixel-transition hover:pixel-hover relative overflow-hidden';
+                cell.setAttribute('data-index', index);
+                
+                for (let i = 0; i < gameState.pixelSize; i++) {
+                    for (let j = 0; j < gameState.pixelSize; j++) {
+                        const pixel = document.createElement('div');
+                        const isBlack = pixelData[i][j] === 1;
+                        pixel.className = `w-1/4 h-1/4 ${isBlack ? 'bg-slate-800' : 'bg-white'} border border-sky-200`;
+                        pixel.setAttribute('data-row', i);
+                        pixel.setAttribute('data-col', j);
+                        cell.appendChild(pixel);
+                    }
+                }
+                return cell;
+            }
+            
+            // 设置点击选择功能
+            function setupClickSelection() {
+                const cells = document.querySelectorAll('.pixel-cell');
+                cells.forEach(cell => {
+                    cell.addEventListener('click', () => {
+                        if (!gameState.isPlaying) return;
+                        const currentIndex = parseInt(cell.getAttribute('data-index'));
+                        if (gameState.selectedCellIndex === null) {
+                            gameState.selectedCellIndex = currentIndex;
+                            cell.classList.add('selected');
+                        } else if (gameState.selectedCellIndex !== currentIndex) {
+                            const prevSelectedCell = document.getElementById(`cell-${gameState.selectedCellIndex}`);
+                            prevSelectedCell.classList.remove('selected');
+                            mergePixelsWithAnimation(gameState.selectedCellIndex, currentIndex);
+                            gameState.selectedCellIndex = null;
+                        } else {
+                            cell.classList.remove('selected');
+                            gameState.selectedCellIndex = null;
+                        }
+                    });
+                });
+            }
+            
+            // 带动画的合并两个像素块
+            function mergePixelsWithAnimation(sourceIndex, targetIndex) {
+                const sourceCell = gameState.cells.find(cell => cell.index === sourceIndex);
+                const targetCell = gameState.cells.find(cell => cell.index === targetIndex);
+                if (!sourceCell || !targetCell) return;
+
+                const sourceRect = sourceCell.element.getBoundingClientRect();
+                const targetRect = targetCell.element.getBoundingClientRect();
+                const containerRect = gameContainer.getBoundingClientRect();
+
+                // 克隆块移动动画（不影响原块）
+                const clone = sourceCell.element.cloneNode(true);
+                clone.id = `clone-${sourceIndex}`;
+                clone.classList.add('move-animation');
+                clone.style.position = 'absolute';
+                clone.style.left = `${sourceRect.left - containerRect.left}px`;
+                clone.style.top = `${sourceRect.top - containerRect.top}px`;
+                clone.style.width = `${sourceRect.width}px`;
+                clone.style.height = `${sourceRect.height}px`;
+                gameContainer.appendChild(clone);
+
+                const targetX = targetRect.left - containerRect.left;
+                const targetY = targetRect.top - containerRect.top;
+                setTimeout(() => {
+                    clone.style.transform = `translate(${targetX - (sourceRect.left - containerRect.left)}px, ${targetY - (sourceRect.top - containerRect.top)}px)`;
+                }, 10);
+
+                // ✅ 核心修改2：动画时序精准对齐 + 原块全程保留 + 数据无缝更新
+                setTimeout(() => {
+                    clone.remove();
+                    // 计算合并结果
+                    const mergedData = [];
+                    for (let i = 0; i < gameState.pixelSize; i++) {
+                        const row = [];
+                        for (let j = 0; j < gameState.pixelSize; j++) {
+                            row.push(sourceCell.data[i][j] === targetCell.data[i][j] ? 1 : 0);
+                        }
+                        mergedData.push(row);
+                    }
+                    updatePixelCell(targetIndex, mergedData);
+                    targetCell.data = mergedData;
+
+                    // 胜利判断
+                    if (checkWinCondition(mergedData)) {
+                        endGame();
+                        return;
+                    }
+
+                    // ✅ 关键：先加动画 → 同步计算旋转数据 → 动画结束无缝替换数据（无闪烁/方块感）
+                    const rotatedData = rotatePixelData(sourceCell.data);
+                    sourceCell.element.classList.add('sync-drift-rotate'); // 立即启动同步特效
+                    // 动画时长和CSS完全一致，做到「动画结束=数据更新」无缝衔接
+                    setTimeout(() => {
+                        sourceCell.data = rotatedData;
+                        updatePixelCell(sourceIndex, rotatedData);
+                        sourceCell.element.classList.remove('sync-drift-rotate'); // 清除动画类，不影响后续操作
+                    }, 600);
+
+                    // 目标块合体反馈动画
+                    const targetElement = document.getElementById(`cell-${targetIndex}`);
+                    targetElement.classList.add('scale-110', 'bg-cyan-100');
+                    setTimeout(() => {
+                        targetElement.classList.remove('scale-110', 'bg-cyan-100');
+                    }, 300);
+                }, 600);
+            }
+            
+            // 更新像素块显示
+            function updatePixelCell(index, data) {
+                const cell = document.getElementById(`cell-${index}`);
+                cell.innerHTML = '';
+                for (let i = 0; i < gameState.pixelSize; i++) {
+                    for (let j = 0; j < gameState.pixelSize; j++) {
+                        const pixel = document.createElement('div');
+                        const isBlack = data[i][j] === 1;
+                        pixel.className = `w-1/4 h-1/4 ${isBlack ? 'bg-slate-800' : 'bg-white'} border border-sky-200 transition-colors duration-200`;
+                        pixel.setAttribute('data-row', i);
+                        pixel.setAttribute('data-col', j);
+                        cell.appendChild(pixel);
+                    }
+                }
+            }
+            
+            // 检查胜利条件 (全黑或全白)
+            function checkWinCondition(pixelData) {
+                const allBlack = pixelData.every(row => row.every(pixel => pixel === 1));
+                const allWhite = pixelData.every(row => row.every(pixel => pixel === 0));
+                return allBlack || allWhite;
+            }
+            
+            // 开始游戏
+            function startGame() {
+                gameState.isPlaying = true;
+                gameState.startTime = new Date();
+                gameStats.classList.remove('hidden');
+                startBtn.classList.add('hidden');
+                gameState.timerInterval = setInterval(updateTimer, 10);
+                initializeGrid();
+            }
+            
+            // 结束游戏
+            function endGame() {
+                gameState.isPlaying = false;
+                clearInterval(gameState.timerInterval);
+                const endTime = new Date();
+                const totalTime = endTime - gameState.startTime;
+                finalTimeDisplay.textContent = formatTime(totalTime);
+                
+                const allCells = document.querySelectorAll('.pixel-cell');
+                allCells.forEach(cell => {
+                    const index = parseInt(cell.getAttribute('data-index'));
+                    const cellData = gameState.cells.find(c => c.index === index).data;
+                    if (checkWinCondition(cellData)) {
+                        cell.classList.add('success-animation', 'border-4', 'border-secondary', 'glow');
+                    }
+                });
+                
+                setTimeout(() => {
+                    successMessage.classList.remove('hidden');
+                }, 500);
+            }
+            
+            // 格式化时间显示 (mm:ss.xx)
+            function formatTime(ms) {
+                const minutes = Math.floor(ms / 60000);
+                const seconds = Math.floor((ms % 60000) / 1000);
+                const centiseconds = Math.floor((ms % 1000) / 10);
+                return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${centiseconds.toString().padStart(2, '0')}`;
+            }
+            
+            // 更新计时器显示
+            function updateTimer() {
+                if (!gameState.isPlaying) return;
+                const currentTime = new Date();
+                const elapsedTime = currentTime - gameState.startTime;
+                timerDisplay.textContent = formatTime(elapsedTime);
+            }
+            
+            // 重启游戏
+            function restartGame() {
+                successMessage.classList.add('hidden');
+                startGame();
+            }
+            
+            // 事件监听
+            startBtn.addEventListener('click', startGame);
+            restartBtn.addEventListener('click', restartGame);
+        });
+    </script>
+</body>
+</html>
